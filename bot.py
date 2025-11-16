@@ -433,7 +433,7 @@ class UltimateRoostooAPI:
             headers = {
                 'RST-API-KEY': self.api_key,
                 'MSG-SIGNATURE': signature
-                # ✅ CORRECT: No Content-Type in GET
+                # ✅ NO Content-Type for GET
             }
             response = self.session.get(f"{self.base_url}/v3/balance", headers=headers, params=params, timeout=10)
             if response.status_code == 200:
@@ -779,7 +779,7 @@ class UltimatePersistentCompetitionBot:
             logger.error("❌ API failed, cannot proceed without balance")
             return False
 
-        # ✅ CORRECT: Support SpotWallet (real API response)
+        # ✅ CORRECT: Support 'SpotWallet' and 'Wallet'
         if 'SpotWallet' in balance:
             wallet_data = balance['SpotWallet']
             logger.info("✅ Parsed balance from 'SpotWallet'")
@@ -891,7 +891,6 @@ class UltimatePersistentCompetitionBot:
             market_data = {}
             wallet = {'USD': {'Free': 0.0}}
             if balance_data and balance_data.get('Success'):
-                # ✅ CORRECT: Use balance_data
                 if 'SpotWallet' in balance_data:
                     wallet = balance_data['SpotWallet']
                 elif 'Wallet' in balance_data:
@@ -1003,10 +1002,27 @@ class UltimatePersistentCompetitionBot:
                 }
                 self.last_trade_time[pair] = current_time
                 self.last_global_trade_time = current_time
+
+                # ✅ RECORD BUY AS A TRADE
                 if self.performance_data['performance_metrics']['first_trade_time'] is None:
                     self.performance_data['performance_metrics']['first_trade_time'] = current_time
                     logger.info("🎯 FIRST TRADE EXECUTED!")
+
+                trade_record = {
+                    'pair': pair,
+                    'pnl': 0.0,
+                    'time': time.time(),
+                    'type': 'ENTRY',
+                    'reason': 'SIGNAL_BUY'
+                }
+                self.performance_data['trades'].append(trade_record)
+                self.performance_data['performance_metrics']['total_trades'] += 1
+                self._save_performance_data()
+
                 logger.info(f"✅ BUY {quantity} {pair} @ ${current_price:.2f} | Size: {position_size:.1%} | Confidence: {signal['confidence']:.2f}")
+            else:
+                logger.error(f"❌ BUY ORDER FAILED for {pair}: {order_result}")
+                return
         elif signal['direction'] == 1 and usd_balance >= 10 and coin in self.positions and signal['confidence'] > 0.4:
             position = self.positions[coin]
             if len(self.positions) < 12:
@@ -1020,7 +1036,22 @@ class UltimatePersistentCompetitionBot:
                         self.positions[coin]['quantity'] += quantity
                         self.last_trade_time[pair] = current_time
                         self.last_global_trade_time = current_time
+
+                        # ✅ RECORD ADDITIONAL BUY
+                        trade_record = {
+                            'pair': pair,
+                            'pnl': 0.0,
+                            'time': time.time(),
+                            'type': 'ADD',
+                            'reason': 'SIGNAL_ADD'
+                        }
+                        self.performance_data['trades'].append(trade_record)
+                        self.performance_data['performance_metrics']['total_trades'] += 1
+                        self._save_performance_data()
+
                         logger.info(f"✅ ADD {quantity} {pair} @ ${current_price:.2f} | Total: {self.positions[coin]['quantity']} | Confidence: {signal['confidence']:.2f}")
+                    else:
+                        logger.error(f"❌ ADD ORDER FAILED for {pair}: {order_result}")
         elif coin in self.positions:
             position = self.positions[coin]
             entry_price = position['entry_price']
@@ -1065,6 +1096,8 @@ class UltimatePersistentCompetitionBot:
             self.last_global_trade_time = time.time()
             logger.info(f"🔴 {reason} {pair} | P&L: {pnl:+.2f}%")
             self._save_performance_data()
+        else:
+            logger.error(f"❌ SELL ORDER FAILED for {pair}: {order_result}")
 
     def _take_partial_profit(self, pair, coin, position, current_price, pnl, exit_count):
         sell_quantity = position['quantity'] * 0.25
@@ -1093,6 +1126,8 @@ class UltimatePersistentCompetitionBot:
                 del self.positions[coin]
                 logger.info(f"🎯 Position closed: {pair}")
             self._save_performance_data()
+        else:
+            logger.error(f"❌ PARTIAL SELL ORDER FAILED for {pair}: {order_result}")
 
     def scheduled_ml_maintenance(self):
         if self.cycle_count % 20 == 0:
@@ -1108,7 +1143,7 @@ class UltimatePersistentCompetitionBot:
                     retrain_candidates.append(symbol)
             if retrain_candidates:
                 logger.info(f"🔄 Scheduled retraining for {len(retrain_candidates)} models")
-                for symbol in retrain_candidates[:3]:
+                for symbol in retrain_candidates[:6]:  # Increased from 3 to 6
                     if self.ml_predictor.train_enhanced_model(symbol):
                         logger.info(f"✅ Retrained {symbol}")
                     time.sleep(2)
