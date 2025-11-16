@@ -67,7 +67,7 @@ class RealDataCollector:
             ticker_data = api.get_ticker(symbol)
             if ticker_data and ticker_data.get('Success'):
                 market_data = ticker_data.get('Data', ticker_data)
-                if symbol in market_
+                if symbol in market_data:
                     current_price = market_data[symbol].get('LastPrice', np.random.uniform(10, 1000))
                     prices = [current_price]
                     volumes = [np.random.uniform(500000, 2000000)]
@@ -433,7 +433,7 @@ class UltimateRoostooAPI:
             headers = {
                 'RST-API-KEY': self.api_key,
                 'MSG-SIGNATURE': signature
-                # ✅ FIXED: NO Content-Type in GET request
+                # ✅ CORRECT: No Content-Type in GET
             }
             response = self.session.get(f"{self.base_url}/v3/balance", headers=headers, params=params, timeout=10)
             if response.status_code == 200:
@@ -719,7 +719,7 @@ class UltimatePersistentCompetitionBot:
                 with open('competition_data_v6.json', 'r') as f:
                     loaded_data = json.load(f)
                     for key, value in loaded_data.items():
-                        if isinstance(value, dict) and key in default_
+                        if isinstance(value, dict) and key in default_data:
                             default_data[key].update(value)
                         else:
                             default_data[key] = value
@@ -779,7 +779,7 @@ class UltimatePersistentCompetitionBot:
             logger.error("❌ API failed, cannot proceed without balance")
             return False
 
-        # ✅ CORRECTED: Support 'SpotWallet' (real Roostoo API response)
+        # ✅ CORRECT: Support SpotWallet (real API response)
         if 'SpotWallet' in balance:
             wallet_data = balance['SpotWallet']
             logger.info("✅ Parsed balance from 'SpotWallet'")
@@ -891,6 +891,7 @@ class UltimatePersistentCompetitionBot:
             market_data = {}
             wallet = {'USD': {'Free': 0.0}}
             if balance_data and balance_data.get('Success'):
+                # ✅ CORRECT: Use balance_data
                 if 'SpotWallet' in balance_data:
                     wallet = balance_data['SpotWallet']
                 elif 'Wallet' in balance_data:
