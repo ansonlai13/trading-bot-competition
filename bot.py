@@ -647,14 +647,21 @@ class UltimatePersistentCompetitionBot:
         logger.info("🚀 ULTIMATE BOT v8.0 COMPETITION READY INITIALIZED")
 
     def _load_positions(self):
-        """✅ Load persistent positions from disk"""
-        try:
-            if os.path.exists('positions.json'):
-                with open('positions.json', 'r') as f:
-                    self.positions = json.load(f)
-                logger.info(f"📂 Loaded {len(self.positions)} persistent positions from disk")
-        except Exception as e:
-            logger.warning(f"Position load failed: {e}")
+    try:
+        if os.path.exists('positions.json'):
+            with open('positions.json', 'r') as f:
+                raw_positions = json.load(f)
+            self.positions = {}
+            for coin, pos in raw_positions.items():
+                self.positions[coin] = {
+                    'entry_price': float(pos['entry_price']),
+                    'quantity': float(pos['quantity']),
+                    'entry_time': float(pos['entry_time']),
+                    'partial_exits': int(pos.get('partial_exits', 0))
+                }
+            logger.info(f"📂 Loaded {len(self.positions)} persistent positions from disk")
+    except Exception as e:
+        logger.warning(f"Position load failed: {e}")
 
     def _save_positions(self):
         """✅ Save positions to disk"""
