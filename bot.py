@@ -435,7 +435,6 @@ class UltimateRoostooAPI:
             headers = {
                 'RST-API-KEY': self.api_key,
                 'MSG-SIGNATURE': signature
-                # ✅ NO Content-Type for GET (fixed)
             }
             response = self.session.get(f"{self.base_url}/v3/balance", headers=headers, params=params, timeout=10)
             if response.status_code == 200:
@@ -643,25 +642,26 @@ class UltimatePersistentCompetitionBot:
         self.start_time = time.time()
         self.cycle_count = 0
         self._load_transferred_positions()
-        self._load_positions()  # ✅ Load saved positions
+        self._load_positions()
         logger.info("🚀 ULTIMATE BOT v8.0 COMPETITION READY INITIALIZED")
 
     def _load_positions(self):
-    try:
-        if os.path.exists('positions.json'):
-            with open('positions.json', 'r') as f:
-                raw_positions = json.load(f)
-            self.positions = {}
-            for coin, pos in raw_positions.items():
-                self.positions[coin] = {
-                    'entry_price': float(pos['entry_price']),
-                    'quantity': float(pos['quantity']),
-                    'entry_time': float(pos['entry_time']),
-                    'partial_exits': int(pos.get('partial_exits', 0))
-                }
-            logger.info(f"📂 Loaded {len(self.positions)} persistent positions from disk")
-    except Exception as e:
-        logger.warning(f"Position load failed: {e}")
+        """✅ Load persistent positions from disk with type safety"""
+        try:
+            if os.path.exists('positions.json'):
+                with open('positions.json', 'r') as f:
+                    raw_positions = json.load(f)
+                self.positions = {}
+                for coin, pos in raw_positions.items():
+                    self.positions[coin] = {
+                        'entry_price': float(pos['entry_price']),
+                        'quantity': float(pos['quantity']),
+                        'entry_time': float(pos['entry_time']),
+                        'partial_exits': int(pos.get('partial_exits', 0))
+                    }
+                logger.info(f"📂 Loaded {len(self.positions)} persistent positions from disk")
+        except Exception as e:
+            logger.warning(f"Position load failed: {e}")
 
     def _save_positions(self):
         """✅ Save positions to disk"""
@@ -721,10 +721,6 @@ class UltimatePersistentCompetitionBot:
                 logger.info("✅ First trade reset for competition")
         except Exception as e:
             logger.warning(f"API switch detection failed: {e}")
-
-    def change_api_url(self, new_url):
-        self.api.set_api_url(new_url)
-        logger.info(f"🔁 Switched to API: {new_url}")
 
     def _load_performance_data(self):
         default_data = {
@@ -844,8 +840,6 @@ class UltimatePersistentCompetitionBot:
                     current_price = market_data.get(pair, {}).get('LastPrice', 1.0)
                 if current_price <= 0:
                     current_price = 1.0
-
-                # ✅ Only set position if NOT already loaded from disk
                 if asset not in self.positions:
                     self.positions[asset] = {
                         'entry_price': current_price,
@@ -859,11 +853,10 @@ class UltimatePersistentCompetitionBot:
         total_balance = usd_balance
         for coin, pos in self.positions.items():
             total_balance += pos['quantity'] * pos['entry_price']
-
         self.performance_data['performance_metrics']['peak_balance'] = total_balance
         self.performance_data['performance_metrics']['current_balance'] = total_balance
         logger.info(f"💰 Portfolio: ${total_balance:,.2f} (USD: ${usd_balance:,.2f})")
-        self._save_positions()  # ✅ Save after initialization
+        self._save_positions()
         logger.info("✅ Bot fully initialized")
         return True
 
@@ -924,6 +917,7 @@ class UltimatePersistentCompetitionBot:
             ticker_data = self.api.get_ticker()
             market_data = {}
             wallet = {'USD': {'Free': 0.0}}
+
             if balance_data and balance_data.get('Success'):
                 if 'SpotWallet' in balance_data:
                     wallet = balance_data['SpotWallet']
@@ -933,6 +927,7 @@ class UltimatePersistentCompetitionBot:
                     logger.warning("⚠️ Balance format unrecognized, using USD=0")
             if ticker_data and ticker_data.get('Success'):
                 market_data = ticker_data.get('Data', ticker_data)
+
             if ticker_data and ticker_data.get('Success'):
                 market_data_sl = ticker_data.get('Data', ticker_data)
                 for coin in list(self.positions.keys()):
@@ -1006,7 +1001,6 @@ class UltimatePersistentCompetitionBot:
 
             if pairs_traded > 0:
                 logger.info(f"📈 Traded {pairs_traded} pairs this cycle")
-
         except Exception as e:
             logger.error(f"Trading cycle error: {e}")
 
@@ -1063,7 +1057,7 @@ class UltimatePersistentCompetitionBot:
                 self.performance_data['trades'].append(trade_record)
                 self.performance_data['performance_metrics']['total_trades'] += 1
                 self._save_performance_data()
-                self._save_positions()  # ✅ Save new position
+                self._save_positions()
                 logger.info(f"✅ BUY {quantity} {pair} @ ${current_price:.2f} | Size: {position_size:.1%} | Confidence: {signal['confidence']:.2f}")
             else:
                 logger.error(f"❌ BUY ORDER FAILED for {pair}: {order_result}")
@@ -1079,7 +1073,6 @@ class UltimatePersistentCompetitionBot:
                 if quantity * current_price >= 10:
                     order_result = self.api.place_order(pair, 'BUY', quantity)
                     if order_result and order_result.get('Success'):
-                        # ✅ FIX: Update to weighted average entry price
                         old_qty = position['quantity']
                         old_price = position['entry_price']
                         new_qty = old_qty + quantity
@@ -1098,8 +1091,8 @@ class UltimatePersistentCompetitionBot:
                         self.performance_data['trades'].append(trade_record)
                         self.performance_data['performance_metrics']['total_trades'] += 1
                         self._save_performance_data()
-                        self._save_positions()  # ✅ Save updated position
-                        logger.info(f"✅ ADD {quantity} {pair} @ ${current_price:.2f} | Total: {self.positions[coin]['quantity']} | Avg Entry: ${new_price:.4f}")
+                        self._save_positions()
+                        logger.info(f"✅ ADD {quantity} {pair} @ ${current_price:.2f} | Total: {self.positions[coin]['quantity']:.6f} | Avg Entry: ${new_price:.4f}")
                     else:
                         logger.error(f"❌ ADD ORDER FAILED for {pair}: {order_result}")
 
@@ -1147,7 +1140,7 @@ class UltimatePersistentCompetitionBot:
             self.last_global_trade_time = time.time()
             logger.info(f"🔴 {reason} {pair} | P&L: {pnl:+.2f}%")
             self._save_performance_data()
-            self._save_positions()  # ✅ Save after close
+            self._save_positions()
         else:
             logger.error(f"❌ SELL ORDER FAILED for {pair}: {order_result}")
 
@@ -1178,7 +1171,7 @@ class UltimatePersistentCompetitionBot:
                 del self.positions[coin]
                 logger.info(f"🎯 Position closed: {pair}")
             self._save_performance_data()
-            self._save_positions()  # ✅ Save after partial
+            self._save_positions()
         else:
             logger.error(f"❌ PARTIAL SELL ORDER FAILED for {pair}: {order_result}")
 
