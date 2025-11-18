@@ -35,6 +35,7 @@ class RealDataCollector:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
+
     def get_historical_klines(self, symbol, interval='5m', limit=100):
         try:
             binance_symbol = symbol.replace('/USD', 'USDT')
@@ -119,6 +120,7 @@ class RealDataCollector:
 
 class EnhancedMLPredictor:
     MODEL_SAVE_PATH = "enhanced_ml_models.pkl"
+
     def __init__(self):
         self.models = {}
         self.scalers = {}
@@ -433,7 +435,7 @@ class UltimateRoostooAPI:
             headers = {
                 'RST-API-KEY': self.api_key,
                 'MSG-SIGNATURE': signature
-                # ✅ NO Content-Type for GET
+                # ✅ NO Content-Type for GET (fixed)
             }
             response = self.session.get(f"{self.base_url}/v3/balance", headers=headers, params=params, timeout=10)
             if response.status_code == 200:
@@ -641,7 +643,26 @@ class UltimatePersistentCompetitionBot:
         self.start_time = time.time()
         self.cycle_count = 0
         self._load_transferred_positions()
+        self._load_positions()  # ✅ Load saved positions
         logger.info("🚀 ULTIMATE BOT v8.0 COMPETITION READY INITIALIZED")
+
+    def _load_positions(self):
+        """✅ Load persistent positions from disk"""
+        try:
+            if os.path.exists('positions.json'):
+                with open('positions.json', 'r') as f:
+                    self.positions = json.load(f)
+                logger.info(f"📂 Loaded {len(self.positions)} persistent positions from disk")
+        except Exception as e:
+            logger.warning(f"Position load failed: {e}")
+
+    def _save_positions(self):
+        """✅ Save positions to disk"""
+        try:
+            with open('positions.json', 'w') as f:
+                json.dump(self.positions, f, indent=2)
+        except Exception as e:
+            logger.error(f"Position save failed: {e}")
 
     def _load_transferred_positions(self):
         try:
@@ -779,7 +800,6 @@ class UltimatePersistentCompetitionBot:
             logger.error("❌ API failed, cannot proceed without balance")
             return False
 
-        # ✅ CORRECT: Support 'SpotWallet' and 'Wallet'
         if 'SpotWallet' in balance:
             wallet_data = balance['SpotWallet']
             logger.info("✅ Parsed balance from 'SpotWallet'")
@@ -792,6 +812,7 @@ class UltimatePersistentCompetitionBot:
 
         self.trading_pairs = self.api.get_all_pairs()
         logger.info(f"✅ Ready to trade {len(self.trading_pairs)} pairs")
+
         for pair in self.trading_pairs:
             self.price_history[pair] = deque(maxlen=50)
             self.volume_history[pair] = deque(maxlen=50)
@@ -799,9 +820,10 @@ class UltimatePersistentCompetitionBot:
             for _ in range(30):
                 self.price_history[pair].append(base_price * np.random.uniform(0.9, 1.1))
                 self.volume_history[pair].append(np.random.uniform(10000, 1000000))
+
         self.train_ml_models()
+
         current_time = time.time()
-        self.positions = {}
         for asset, data in wallet_data.items():
             if asset == 'USD':
                 continue
@@ -815,21 +837,26 @@ class UltimatePersistentCompetitionBot:
                     current_price = market_data.get(pair, {}).get('LastPrice', 1.0)
                 if current_price <= 0:
                     current_price = 1.0
-                self.positions[asset] = {
-                    'entry_price': current_price,
-                    'quantity': free_balance,
-                    'entry_time': current_time - 3601,
-                    'partial_exits': 0
-                }
-                logger.info(f"🔁 AUTO-SYNCED: {asset} x {free_balance:.6f} @ ${current_price:.4f}")
+
+                # ✅ Only set position if NOT already loaded from disk
+                if asset not in self.positions:
+                    self.positions[asset] = {
+                        'entry_price': current_price,
+                        'quantity': free_balance,
+                        'entry_time': current_time - 3601,
+                        'partial_exits': 0
+                    }
+                    logger.info(f"🔁 AUTO-SYNCED: {asset} x {free_balance:.6f} @ ${current_price:.4f}")
 
         usd_balance = wallet_data.get('USD', {}).get('Free', 0)
         total_balance = usd_balance
         for coin, pos in self.positions.items():
             total_balance += pos['quantity'] * pos['entry_price']
+
         self.performance_data['performance_metrics']['peak_balance'] = total_balance
         self.performance_data['performance_metrics']['current_balance'] = total_balance
         logger.info(f"💰 Portfolio: ${total_balance:,.2f} (USD: ${usd_balance:,.2f})")
+        self._save_positions()  # ✅ Save after initialization
         logger.info("✅ Bot fully initialized")
         return True
 
@@ -914,10 +941,12 @@ class UltimatePersistentCompetitionBot:
                     if unrealized_pnl <= -STOP_LOSS_PCT * 100:
                         sell_quantity = position['quantity']
                         self._close_position(pair, coin, sell_quantity, unrealized_pnl, "STOP_LOSS")
+
             if not market_data:
                 market_data = {}
                 for pair in self.trading_pairs[:10]:
                     market_data[pair] = {'LastPrice': np.random.uniform(10, 1000)}
+
             total_value = wallet.get('USD', {}).get('Free', 0)
             for coin, position in self.positions.items():
                 pair = f"{coin}/USD"
@@ -925,19 +954,24 @@ class UltimatePersistentCompetitionBot:
                 if price <= 0:
                     price = position['entry_price']
                 total_value += position['quantity'] * price
+
             peak_balance = self.performance_data['performance_metrics']['peak_balance']
             self.performance_data['performance_metrics']['peak_balance'] = max(peak_balance, total_value)
             self.performance_data['performance_metrics']['current_balance'] = total_value
+
             if self.performance_data['performance_metrics']['first_trade_time'] is None and len(self.performance_data['trades']) > 0:
                 self.performance_data['performance_metrics']['first_trade_time'] = time.time()
                 logger.info("✅ FIRST TRADE RECORDED!")
+
             if self.risk_manager.check_emergency_conditions(total_value, peak_balance):
                 for coin, position in list(self.positions.items()):
                     pair = f"{coin}/USD"
                     self.api.place_order(pair, 'SELL', position['quantity'])
                     logger.info(f"🟡 Emergency liquidation: {coin}")
                 self.positions.clear()
+                self._save_positions()
                 return
+
             pairs_traded = 0
             for pair in self.trading_pairs[:20]:
                 if pair not in market_data:
@@ -953,15 +987,19 @@ class UltimatePersistentCompetitionBot:
                     pairs_traded += 1
                     if pairs_traded >= 4:
                         break
+
             if len(self.performance_data['trades']) > 10:
                 recent_trades = self.performance_data['trades'][-10:]
                 recent_performance = [{'return': trade['pnl']} for trade in recent_trades]
                 self.risk_manager.update_risk_level(recent_performance, {'volatility': 0.5})
+
             if len(self.performance_data['trades']) % 5 == 0:
                 self._update_competition_metrics()
                 self._save_performance_data()
+
             if pairs_traded > 0:
                 logger.info(f"📈 Traded {pairs_traded} pairs this cycle")
+
         except Exception as e:
             logger.error(f"Trading cycle error: {e}")
 
@@ -969,6 +1007,7 @@ class UltimatePersistentCompetitionBot:
         current_time = time.time()
         coin = pair.split('/')[0]
         usd_balance = wallet_data.get('USD', {}).get('Free', 0)
+
         if coin in self.positions:
             position = self.positions[coin]
             entry_price = position['entry_price']
@@ -980,11 +1019,13 @@ class UltimatePersistentCompetitionBot:
                 sell_quantity = position['quantity']
                 self._close_position(pair, coin, sell_quantity, unrealized_pnl, "STOP_LOSS")
                 return
+
         if current_time - self.last_global_trade_time < MIN_TRADE_INTERVAL:
             logger.info(f"⏰ Global cooldown active for {pair}, {MIN_TRADE_INTERVAL - (current_time - self.last_global_trade_time):.0f}s remaining")
             return
         if pair in self.last_trade_time and current_time - self.last_trade_time[pair] < MIN_TRADE_INTERVAL:
             return
+
         if signal['direction'] == 1 and usd_balance >= 10 and coin not in self.positions:
             position_size = BASE_POSITION_SIZE * self.risk_manager.risk_level
             investment_amount = usd_balance * position_size
@@ -1002,12 +1043,9 @@ class UltimatePersistentCompetitionBot:
                 }
                 self.last_trade_time[pair] = current_time
                 self.last_global_trade_time = current_time
-
-                # ✅ RECORD BUY AS A TRADE
                 if self.performance_data['performance_metrics']['first_trade_time'] is None:
                     self.performance_data['performance_metrics']['first_trade_time'] = current_time
                     logger.info("🎯 FIRST TRADE EXECUTED!")
-
                 trade_record = {
                     'pair': pair,
                     'pnl': 0.0,
@@ -1018,11 +1056,12 @@ class UltimatePersistentCompetitionBot:
                 self.performance_data['trades'].append(trade_record)
                 self.performance_data['performance_metrics']['total_trades'] += 1
                 self._save_performance_data()
-
+                self._save_positions()  # ✅ Save new position
                 logger.info(f"✅ BUY {quantity} {pair} @ ${current_price:.2f} | Size: {position_size:.1%} | Confidence: {signal['confidence']:.2f}")
             else:
                 logger.error(f"❌ BUY ORDER FAILED for {pair}: {order_result}")
                 return
+
         elif signal['direction'] == 1 and usd_balance >= 10 and coin in self.positions and signal['confidence'] > 0.4:
             position = self.positions[coin]
             if len(self.positions) < 12:
@@ -1033,11 +1072,15 @@ class UltimatePersistentCompetitionBot:
                 if quantity * current_price >= 10:
                     order_result = self.api.place_order(pair, 'BUY', quantity)
                     if order_result and order_result.get('Success'):
-                        self.positions[coin]['quantity'] += quantity
+                        # ✅ FIX: Update to weighted average entry price
+                        old_qty = position['quantity']
+                        old_price = position['entry_price']
+                        new_qty = old_qty + quantity
+                        new_price = (old_qty * old_price + quantity * current_price) / new_qty
+                        self.positions[coin]['quantity'] = new_qty
+                        self.positions[coin]['entry_price'] = new_price
                         self.last_trade_time[pair] = current_time
                         self.last_global_trade_time = current_time
-
-                        # ✅ RECORD ADDITIONAL BUY
                         trade_record = {
                             'pair': pair,
                             'pnl': 0.0,
@@ -1048,10 +1091,11 @@ class UltimatePersistentCompetitionBot:
                         self.performance_data['trades'].append(trade_record)
                         self.performance_data['performance_metrics']['total_trades'] += 1
                         self._save_performance_data()
-
-                        logger.info(f"✅ ADD {quantity} {pair} @ ${current_price:.2f} | Total: {self.positions[coin]['quantity']} | Confidence: {signal['confidence']:.2f}")
+                        self._save_positions()  # ✅ Save updated position
+                        logger.info(f"✅ ADD {quantity} {pair} @ ${current_price:.2f} | Total: {self.positions[coin]['quantity']} | Avg Entry: ${new_price:.4f}")
                     else:
                         logger.error(f"❌ ADD ORDER FAILED for {pair}: {order_result}")
+
         elif coin in self.positions:
             position = self.positions[coin]
             entry_price = position['entry_price']
@@ -1096,6 +1140,7 @@ class UltimatePersistentCompetitionBot:
             self.last_global_trade_time = time.time()
             logger.info(f"🔴 {reason} {pair} | P&L: {pnl:+.2f}%")
             self._save_performance_data()
+            self._save_positions()  # ✅ Save after close
         else:
             logger.error(f"❌ SELL ORDER FAILED for {pair}: {order_result}")
 
@@ -1126,6 +1171,7 @@ class UltimatePersistentCompetitionBot:
                 del self.positions[coin]
                 logger.info(f"🎯 Position closed: {pair}")
             self._save_performance_data()
+            self._save_positions()  # ✅ Save after partial
         else:
             logger.error(f"❌ PARTIAL SELL ORDER FAILED for {pair}: {order_result}")
 
@@ -1143,7 +1189,7 @@ class UltimatePersistentCompetitionBot:
                     retrain_candidates.append(symbol)
             if retrain_candidates:
                 logger.info(f"🔄 Scheduled retraining for {len(retrain_candidates)} models")
-                for symbol in retrain_candidates[:6]:  # Increased from 3 to 6
+                for symbol in retrain_candidates[:6]:
                     if self.ml_predictor.train_enhanced_model(symbol):
                         logger.info(f"✅ Retrained {symbol}")
                     time.sleep(2)
